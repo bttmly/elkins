@@ -1,6 +1,7 @@
 (function ( global ) {
 
   var RAW_GIT = "https://rawgit.com/";
+  var CF = "http://cdnjs.cloudflare.com/ajax/libs/";
 
   function diffKeys ( keysA, keysB ) {
     var obj = keysA.reduce( function ( o, key ) {
@@ -20,6 +21,18 @@
     return null;
   }
 
+  function httpGet ( url, cb ) {
+    cb = cb || noop;
+    var req = new XMLHttpRequest();
+    req.open( "GET", url );
+    req.onreadystatechange = function () {
+      if ( req.readyState === 4 ) {
+        cb( null, req.response );
+      }
+    };
+    req.send();
+  }
+
   function injectCss ( href ) {
     var link = document.createElement( "link" );
     link.rel = "stylesheet";
@@ -27,40 +40,29 @@
     document.head.appendChild( link );
   }
 
-  function httpGet ( url, success, fail ) {
-    var req = new XMLHttpRequest();
-    req.open( "GET", url );
-    req.onreadystatechange = function () {
-      if ( req.readyState === 4 ) {
-        success( req.response );
-      }
-    };
-    req.send();
-  }
-
-  function injectJs ( src, success, fail ) {
+  function injectJs ( src, cb ) {
+    cb = cb || noop;
     var script;
+
     function cleanup () {
       document.body.removeChild( script );
       script = null;
     }
 
-    var prevGlobals = Object.keys( window );
-
+    var prevGlobals = Object.keys( global );
     script = document.createElement( "script" );
     script.src = src;
+
     script.onload = function () {
-      var diff = diffKeys( prevGlobals, Object.keys( window ) );
-      if ( success ) {
-        success( src, diff );
-      }
+      var diff = diffKeys( prevGlobals, Object.keys( global ) );
+      scriptSuccess({ src: src, diff: diff });
+      cb();
       cleanup();
     };
     script.onerror = function () {
-      if ( fail ) {
-        fail( src );
-      }
       cleanup();
+      scriptError( src );
+      cb();
     };
     document.body.appendChild( script );
   }
@@ -69,31 +71,28 @@
     throw new Error( "Script failed to load at " + src );
   }
 
-  function scriptSuccess ( src, diff ) {
-    console.log( "Script loaded at " + src );
-    if ( diff ) {
-      console.log( "Globals created: " + ( diff.length ? diff.join( ", " ) : "NONE" ) );
+  function scriptSuccess ( data ) {
+    console.log( "Script loaded at " + data.src );
+    if ( data.diff ) {
+      console.log( "Globals created: " + ( data.diff.length ? data.diff.join( ", " ) : "NONE" ) );
     }
   }
 
-  function getResource ( url, success, fail ) {
+  function noop () {}
+
+  function getResource ( url, cb ) {
     var ext = fileExt( url );
-    if ( success == null ) {
-      success = scriptSuccess;
-    }
-    if ( fail == null ) {
-      fail = scriptError;
-    }
     if ( ext === "js" ) {
-      injectJs( url, success, fail );
+      injectJs( url, cb );
     } else if ( ext === "css" ) {
-      injectCss( url );
+      injectCss( url, cb );
     } else {
       throw new Error( "No method for resource " + url );
     }
   }
 
-  function library ( name ) {
+  function library ( name, cb ) {
+    cb = cb || noop;
     if ( libs[name] ) {
       if ( Array.isArray( libs[name] ) ) {
         return libs[name].forEach( getResource );
@@ -102,55 +101,64 @@
         return getResource( libs[name] );
       }
     } else {
-      throw new Error( name + " not found. Open a pull request." );
+      cb( new Error( name + " not found. Open a pull request." ), null );
     }
   }
 
   function ghPath ( path ) {
     var src = RAW_GIT + path;
-    injectJs( src, scriptSuccess, scriptError );
+    injectJs( src );
   }
 
-  function bower ( repo ) {
+  function bower ( repo, cb ) {
     var pieces = repo.split( "/" );
     var user = pieces[0];
     var name = pieces[1];
     var branch = pieces[2] || "master";
     var path = [user, name, branch, ""].join( "/" );
-    httpGet( RAW_GIT + path + "bower.json", function ( resp ) {
-      var json = JSON.parse( resp );
+    httpGet( RAW_GIT + path + "bower.json", function ( err, resp ) {
+      if ( err ) {
+        cb( "Failed to find bower.json" );
+      }
       console.log( "bower.json loaded" );
-      var main = json.main;
+      var main = JSON.parse( resp ).main;
       if ( main.charAt( 0 ) === "." ) {
         main = main.slice( 1 );
       }
       var src = ( RAW_GIT + path + main );
-      injectJs( src, scriptSuccess, scriptError );
+      injectJs( src, cb );
     });
   }
 
   var libs = {
     jquery: "https://code.jquery.com/jquery-1.11.1.min.js",
-    underscore: "http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.7.0/underscore-min.js",
-    lodash: "http://cdnjs.cloudflare.com/ajax/libs/lodash.js/2.4.1/lodash.min.js",
-    backbone: "http://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.1.2/backbone-min.js",
-    angular: "http://cdnjs.cloudflare.com/ajax/libs/angular.js/1.2.20/angular.min.js",
-    ember: "http://cdnjs.cloudflare.com/ajax/libs/ember.js/1.7.0/ember.min.js",
-    react: "http://cdnjs.cloudflare.com/ajax/libs/react/0.11.2/react.min.js",
-    moment: "http://cdnjs.cloudflare.com/ajax/libs/moment.js/2.8.3/moment.min.js",
-    d3: "http://cdnjs.cloudflare.com/ajax/libs/d3/3.4.11/d3.min.js",
+    underscore: CF + "underscore.js/1.7.0/underscore-min.js",
+    lodash: CF + "lodash.js/2.4.1/lodash.min.js",
+    backbone: CF + "backbone.js/1.1.2/backbone-min.js",
+    angular: CF + "angular.js/1.2.20/angular.min.js",
+    ember: CF + "ember.js/1.7.0/ember.min.js",
+    react: CF + "react/0.11.2/react.min.js",
+    moment: CF + "moment.js/2.8.3/moment.min.js",
+    d3: CF + "d3/3.4.11/d3.min.js",
     bootstrap: [
       "http://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css",
       "http://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"
     ]
   };
 
+  Object.keys( libs ).forEach( function ( key ) {
+    library[key] = function ( cb ) {
+      return library( key, cb );
+    };
+  });
+
   var Elkins = {
-    library: library,
+    lib: library,
     ghPath: ghPath,
     bower: bower,
   };
 
+  // necessary? Probably not
   if ( typeof module !== "undefined" ) {
     module.exports = Elkins;
   } else {
