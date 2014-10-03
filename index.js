@@ -1,5 +1,7 @@
 (function ( global ) {
 
+  var RAW_GIT = "https://rawgit.com/";
+
   function diffKeys ( keysA, keysB ) {
     var obj = keysA.reduce( function ( o, key ) {
       o[key] = 1;
@@ -36,7 +38,7 @@
     req.send();
   }
 
-  function fetchScript ( src, success, fail ) {
+  function injectJs ( src, success, fail ) {
     var script;
     function cleanup () {
       document.body.removeChild( script );
@@ -69,7 +71,59 @@
 
   function scriptSuccess ( src, diff ) {
     console.log( "Script loaded at " + src );
-    console.log( "Globals created: " + diff.join( ", " ) );
+    if ( diff ) {
+      console.log( "Globals created: " + diff.length ? diff.join( ", " ) : "NONE" );
+    }
+  }
+
+  function getResource ( url, success, fail ) {
+    var ext = fileExt( url );
+    if ( ext === "js" ) {
+      fetchScript( url, success, fail );
+    } else if ( ext === "css" ) {
+      injectCss( url );
+    } else {
+      throw new Error( "No method for resource " + url );
+    }
+  }
+
+  function library ( name ) {
+    if ( libs[name] ) {
+      if ( Array.isArray( libs[name] ) ) {
+        return libs[name].forEach( Elkins.library );
+      }
+      if ( typeof libs[name] === "string" ) {
+        return getResource( libs[name], scriptSuccess, scriptError );
+      }
+      libs[name].forEach( function ( str ) {
+        getResource( str, scriptSuccess, scriptError );
+      });
+    } else {
+      throw new Error( name + " not found. Open a pull request." );
+    }
+  }
+
+  function ghPath ( path ) {
+    var src = RAW_GIT + path;
+    injectJs( src, scriptSuccess, scriptError );
+  }
+
+  function bower ( repo ) {
+    var pieces = repo.split( "/" );
+    var user = pieces[0];
+    var name = pieces[1];
+    var branch = pieces[2] || "master";
+    var path = [user, name, branch].join( "/" );
+    httpGet( RAW_GIT + path + "/bower.json", function ( resp ) {
+      var json = JSON.parse( resp );
+      console.log( "bower.json loaded" );
+      var main = json.main;
+      if ( main.charAt( 0 ) === "." ) {
+        main = main.slice( 1 );
+      }
+      var src = ( RAW_GIT + path + main );
+      injectJs( src, scriptSuccess, scriptError );
+    })
   }
 
   var libs = {
@@ -88,53 +142,10 @@
     ]
   }
 
-  var rawGitRoot = "https://rawgit.com/";
-
-  function getResource ( url, success, fail ) {
-    var ext = fileExt( url );
-    if ( ext === "js" ) {
-      fetchScript( url, success, fail );
-    } else if ( ext === "css" ) {
-      injectCss( url );
-    } else {
-      throw new Error( "No method for resource " + url );
-    }
-  }
-
   var Elkins = {
-    library: function ( name ) {
-      if ( libs[name] ) {
-        if ( typeof libs[name] === "string" ) {
-          return getResource( libs[name], scriptSuccess, scriptError );
-        }
-        libs[name].forEach( function ( str ) {
-          getResource( str, scriptSuccess, scriptError );
-        });
-      } else {
-        throw new Error( name + " not found. Open a pull request." );
-      }
-    },
-    ghPath: function ( path ) {
-      var src = rawGitRoot + path;
-      fetchScript( src, scriptSuccess, scriptError );
-    },
-    bower: function ( repo ) {
-      var pieces = repo.split( "/" );
-      var user = pieces[0];
-      var name = pieces[1];
-      var branch = pieces[2] || "master";
-      var path = [user, name, branch].join( "/" );
-      httpGet( "https://rawgit.com/" + path + "/bower.json", function ( resp ) {
-        var json = JSON.parse( resp );
-        console.log( "bower.json loaded" );
-        var main = json.main;
-        if ( main.charAt( 0 ) === "." ) {
-          main = main.slice( 1 );
-        }
-        var src = ( "https://rawgit.com/" + path + main );
-        fetchScript( src, scriptSuccess, scriptError );
-      })
-    }
+    library: library
+    ghPath: ghPath
+    bower: bower
   };
 
   if ( typeof module !== "undefined" ) {
