@@ -15,7 +15,7 @@ gulp.task('scripts', function () {
   var header = new Buffer('// Copy this to your URL bar:\njavascript:');
 
   gulp.src('app/{,*/}*.js')
-    .pipe(gulpJshint())
+    // .pipe(gulpJshint())
     .pipe(gulpJshint.reporter(jshintStylish))
     .pipe(gulpUglify())
     .pipe(gulpConcat('bookmarklet.js'))
