@@ -116,8 +116,8 @@
     var user = pieces[0];
     var name = pieces[1];
     var branch = pieces[2] || "master";
-    var path = [user, name, branch].join( "/" );
-    httpGet( RAW_GIT + path + "/bower.json", function ( resp ) {
+    var path = [user, name, branch, ""].join( "/" );
+    httpGet( RAW_GIT + path + "bower.json", function ( resp ) {
       var json = JSON.parse( resp );
       console.log( "bower.json loaded" );
       var main = json.main;
